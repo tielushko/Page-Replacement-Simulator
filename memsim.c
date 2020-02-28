@@ -3,19 +3,26 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <limits.h>
+#define __SIZE_MAX__ 0xffffffffU
 
 int nframes;
 int countReads = 0;
 int countWrites = 0;
 bool debug;
 
-void rdm(char* filename);
-void lru(char* filename);
-void fifo(char* filename); 
-void vms(char* filename); 
+void rdm(char* filename, int numframes);
+void lru(char* filename, int numframes);
+void fifo(char* filename, int numframes); 
+void vms(char* filename, int numframes); 
+
+struct Entries {
+    unsigned address;
+    char readwrite;
+    int valid;
+
+} entries;
 
 int main (int argc, char* argv[]) {
-    
     //making sure that there is a correct number of arguments in the execution of the problem. 
     if (argc < 5) {
         fprintf(stderr, "Not enough arguments in the execution. Usage: 'memsim <tracefile> <nframes> <rdm|lru|fifo|vms> <debug|quiet>");
@@ -52,13 +59,13 @@ int main (int argc, char* argv[]) {
     printf("simulation mode is %s\n", simulationMode);
 
     if (strcmp(simulationMode, "LRU") || strcmp(simulationMode, "lru")) {
-        lru(filename);
+        lru(filename, nframes);
     } else if (strcmp(simulationMode, "FIFO") || strcmp(simulationMode, "fifo")) {
-        fifo(filename);
+        fifo(filename, nframes);
     } else if (strcmp(simulationMode, "RDM") || strcmp(simulationMode, "rdm")) {
-        rdm(filename);
+        rdm(filename, nframes);
     } else if (strcmp(simulationMode, "VMS") || strcmp(simulationMode, "vms")) {
-        vms(filename);  
+        vms(filename, nframes);  
     } else {
         fprintf(stderr, "Incorrect Page Replacement Simulation is selected. Abort.");
         return EXIT_FAILURE;
@@ -71,4 +78,75 @@ int main (int argc, char* argv[]) {
     printf("Total Disk Writes: %d\n", countWrites);
     
     return 0;
+}
+
+void rdm(char* filename, int numframes) {
+    struct Entries entries[numframes];
+    FILE *fp;
+    fp = fopen(filename, "r"); // Open our file.
+
+    if (fp == NULL) { //Verify it was successful
+        printf("Error opening file.\n");
+        exit(0);
+    }
+
+    int i = 0;
+    while ( (fscanf(fp, "%x %c", &entries[i].address, &entries[i].readwrite)) != EOF) {
+        entries[i].valid = 0; // Not sure which val to initialize with
+        printf("Addr: %x  RW: %c  Valid: %d\n", entries[i].address, entries[i].readwrite, entries[i].valid);
+        i++;
+    }
+
+}
+void lru(char* filename, int numframes) {
+    struct Entries entries[numframes];
+    FILE *fp;
+    fp = fopen(filename, "r"); // Open our file.
+
+    if (fp == NULL) { //Verify it was successful
+        printf("Error opening file.\n");
+        exit(0);
+    }
+
+    int i = 0;
+    while ( (fscanf(fp, "%x %c", &entries[i].address, &entries[i].readwrite)) != EOF) {
+        entries[i].valid = 0; // Not sure which val to initialize with
+        printf("Addr: %x  RW: %c  Valid: %d\n", entries[i].address, entries[i].readwrite, entries[i].valid);
+        i++;
+    }
+
+}
+void fifo(char* filename, int numframes) {
+    struct Entries entries[numframes];
+    FILE *fp;
+    fp = fopen(filename, "r"); // Open our file.
+
+    if (fp == NULL) { //Verify it was successful
+        printf("Error opening file.\n");
+        exit(0);
+    }
+
+    int i = 0;
+    while ( (fscanf(fp, "%x %c", &entries[i].address, &entries[i].readwrite)) != EOF) {
+        entries[i].valid = 0; // Not sure which val to initialize with
+        printf("Addr: %x  RW: %c  Valid: %d\n", entries[i].address, entries[i].readwrite, entries[i].valid);
+        i++;
+    }
+}
+void vms(char* filename, int numframes) {
+    struct Entries entries[numframes];
+    FILE *fp;
+    fp = fopen(filename, "r"); // Open our file.
+
+    if (fp == NULL) { //Verify it was successful
+        printf("Error opening file.\n");
+        exit(0);
+    }
+
+    int i = 0;
+    while ( (fscanf(fp, "%x %c", &entries[i].address, &entries[i].readwrite)) != EOF) {
+        entries[i].valid = 0; // Not sure which val to initialize with
+        printf("Addr: %x  RW: %c  Valid: %d\n", entries[i].address, entries[i].readwrite, entries[i].valid);
+        i++;
+    }
 }
