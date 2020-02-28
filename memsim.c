@@ -14,8 +14,14 @@ void lru(char* filename);
 void fifo(char* filename); 
 void vms(char* filename); 
 
+struct Entries {
+    unsigned address;
+    char readwrite;
+    int valid;
+
+} entries;
+
 int main (int argc, char* argv[]) {
-    
     //making sure that there is a correct number of arguments in the execution of the problem. 
     if (argc < 5) {
         fprintf(stderr, "Not enough arguments in the execution. Usage: 'memsim <tracefile> <nframes> <rdm|lru|fifo|vms> <debug|quiet>");
@@ -50,14 +56,20 @@ int main (int argc, char* argv[]) {
     //reading the page replacement simulation function the program will run - argv[3] (rdm|lru|fifo|vms) 
     char* simulationMode = argv[3];
     printf("simulation mode is %s\n", simulationMode);
-
-    if (strcmp(simulationMode, "LRU") || strcmp(simulationMode, "lru")) {
+    
+    //fscanf(fp, "%x %c", &addr, &rw);
+    //printf("%x %c\n", addr, rw);
+    //fscanf(fp, "%x %c", &addr, &rw);
+    //printf("%x %c\n", addr, rw);
+    
+    
+    if (strcmp(simulationMode, "LRU") == 0 || strcmp(simulationMode, "lru") == 0) {
         lru(filename);
-    } else if (strcmp(simulationMode, "FIFO") || strcmp(simulationMode, "fifo")) {
+    } else if (strcmp(simulationMode, "FIFO") == 0|| strcmp(simulationMode, "fifo") == 0) {
         fifo(filename);
-    } else if (strcmp(simulationMode, "RDM") || strcmp(simulationMode, "rdm")) {
+    } else if (strcmp(simulationMode, "RDM") == 0 || strcmp(simulationMode, "rdm") == 0) {
         rdm(filename);
-    } else if (strcmp(simulationMode, "VMS") || strcmp(simulationMode, "vms")) {
+    } else if (strcmp(simulationMode, "VMS") == 0 || strcmp(simulationMode, "vms") == 0) {
         vms(filename);  
     } else {
         fprintf(stderr, "Incorrect Page Replacement Simulation is selected. Abort.");
@@ -71,4 +83,80 @@ int main (int argc, char* argv[]) {
     printf("Total Disk Writes: %d\n", countWrites);
     
     return 0;
+}
+
+
+void rdm(char* filename) {
+    FILE *fp;
+    fp = fopen(filename, "r"); // Open our file.
+
+    if (fp == NULL) { //Verify it was successful
+        printf("Error opening file.\n");
+        exit(0);
+    }
+      
+    char* rw; 
+    unsigned addr;
+    
+    while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
+        printf("%x %c\n", addr, rw);
+    
+    }
+    
+    fclose(fp);
+}
+
+void lru(char* filename) {
+    FILE *fp;
+    fp = fopen(filename, "r"); // Open our file.
+
+    if (fp == NULL) { //Verify it was successful
+        printf("Error opening file.\n");
+        exit(0);
+    }
+      
+    char* rw; 
+    unsigned addr;
+    
+    while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
+        printf("%x %c\n", addr, rw);
+    
+    }
+    fclose(fp);
+}
+void fifo(char* filename) {
+   FILE *fp;
+    fp = fopen(filename, "r"); // Open our file.
+
+    if (fp == NULL) { //Verify it was successful
+        printf("Error opening file.\n");
+        exit(0);
+    }
+      
+    char* rw; 
+    unsigned addr;
+    
+    while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
+        printf("%x %c\n", addr, rw);
+    
+    }
+    fclose(fp);
+}
+void vms(char* filename) {
+    FILE *fp;
+    fp = fopen(filename, "r"); // Open our file.
+
+    if (fp == NULL) { //Verify it was successful
+        printf("Error opening file.\n");
+        exit(0);
+    }
+      
+    char* rw; 
+    unsigned addr;
+    
+    while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
+        printf("%x %c\n", addr, rw);
+    
+    }
+    fclose(fp);
 }
