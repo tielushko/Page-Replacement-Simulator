@@ -250,7 +250,7 @@ void rdm(char* filename) {
                             break;
                         }
                     }
-                } else {
+                } else { //ALGORITHM JUICE
                     srand(time(0));
                     int randIndex = (rand() % nframes);
                     //condition to check which index to be eliminated.
