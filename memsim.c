@@ -133,8 +133,8 @@ void rdm(char* filename) {
                 int m;
                 int emptypages = 0;
 
-                for (m = 0; m < nframes; m++) { //there is an error in a way I process. Once the array gets filled with last element, it thinks 
-                    if (RAM[m].VPN == 0)        //it needs to eliminate the element again.
+                for (m = 0; m < nframes; m++) { //UPDATE: Processes the empty correctly. 
+                    if (RAM[m].VPN == 0)        
                         emptypages++;
                 }
                 
@@ -159,9 +159,6 @@ void rdm(char* filename) {
                     }
                 } 
                
-                //if (RAM[nframes-1].VPN != 0)  // in case the last frame in the frame table is populated, then the whole table is full
-                //    full = true; 
-            
                 if (full) {
                     //otherwise if the entire table is full, we need to use a page replacement algorithm here. 
                     srand(time(0));
