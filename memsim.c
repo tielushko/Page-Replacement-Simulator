@@ -34,9 +34,6 @@ int main (int argc, char* argv[]) {
     //copying the name of the tracefile from argv[1] and opening the file.
     char* filename = argv[1];
 
-    //make sure in the page simulator functions we have that we check if file was opened correctly or not. 
-
-
     //reading the number of frames from the argument list argv[2].
     nframes = atoi(argv[2]); 
     if (nframes <= 0) {
@@ -58,7 +55,7 @@ int main (int argc, char* argv[]) {
 
     //reading the page replacement simulation function the program will run - argv[3] (rdm|lru|fifo|vms) 
     char* simulationMode = argv[3];
-    printf("simulation mode is %s\n", simulationMode);
+    printf("Simulation mode is %s\n", simulationMode);
     
     if (strcmp(simulationMode, "LRU") == 0 || strcmp(simulationMode, "lru") == 0) {
         lru(filename);
@@ -94,7 +91,7 @@ void rdm(char* filename) {
       
     char rw; 
     unsigned addr;
-    int i = 0;
+    //int i = 0;
     char READ = 'R';
     char WRITE = 'W';
     char* temp;
@@ -111,7 +108,6 @@ void rdm(char* filename) {
 
     while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
         nEvents++;
-        //printf("%x %c\n", addr, rw);
     
         //direct the flow if the R is seen
         int j;
@@ -120,8 +116,10 @@ void rdm(char* filename) {
                 //if found need to break and set found to true;
                 unsigned readVPN = addr/4096;
                 if (readVPN == RAM[j].VPN) {
-                    //add condition to print only for debug mode                    
-                    printf("Reading %x memory reference from page %x in RAM. HIT\n", addr, readVPN);
+                    //add condition to print only for debug mode 
+                    if(debug == true) {                   
+                        printf("Reading %x memory reference from page %x in RAM. HIT\n", addr, readVPN);
+                    }
                     found = true;
                     break;//this is a hit we dont need to do anything //we can break.
                 } else {
@@ -145,7 +143,7 @@ void rdm(char* filename) {
                 
                 int l;
                  
-                for (int l = 0; l < nframes; l++) { //run for loop to check for empty frames.
+                for (l = 0; l < nframes; l++) { //run for loop to check for empty frames.
                     if (RAM[l].VPN == 0)  { //load the first empty page in RAM with information from the disk.
                         RAM[l].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
                         RAM[l].rw = rw; //rw part
@@ -154,20 +152,25 @@ void rdm(char* filename) {
                         RAM[l].BOUND = RAM[l].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
                         countReads++;
                         //add condition to print only for debug mode
-                        printf("Placing the following into an empty space %d in RAM. %x %c %d %x %x\n", l, RAM[l].VPN, RAM[l].rw, RAM[l].dirty, RAM[l].BASE, RAM[l].BOUND);
+                        if(debug == true)
+                            printf("\nPlacing the following memory reference: %x into an empty space %d in RAM. VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", addr, l, RAM[l].VPN, RAM[l].rw, RAM[l].dirty, RAM[l].BASE, RAM[l].BOUND);
                         break;
                     }
                 } 
-               
+                
+                //otherwise if the entire table is full, we need to use a page replacement algorithm here. 
+                //THIS IS THE JUICE OF ALGORITHM
                 if (full) {
-                    //otherwise if the entire table is full, we need to use a page replacement algorithm here. 
                     srand(time(0));
                     int randIndex = (rand() % nframes);
                     //condition to check which index to be eliminated.
-                    printf("index to be eliminated %d\n", randIndex);
-
+                    if(debug == true) {
+                        printf("\nIndex to be eliminated %d\n", randIndex);
+                        printf("Page to be eliminated: VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", RAM[randIndex].VPN, RAM[randIndex].rw, RAM[randIndex].dirty, RAM[randIndex].BASE, RAM[randIndex].BOUND);
+                    }
                     if(RAM[randIndex].dirty == 1) {
-                        printf("Eliminating a dirty page %x, requires a write to the disk.\n", RAM[randIndex].VPN);
+                        if(debug == true)
+                            printf("\nEliminating a dirty page %x, requires a write to the disk.\n", RAM[randIndex].VPN);
                         countWrites++;
                     }
 
@@ -180,8 +183,8 @@ void rdm(char* filename) {
                             RAM[randIndex].BOUND = RAM[randIndex].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
                             countReads++;
                             //add condition to print only for debug mode
-                            printf("Page replacement for space %d in RAM. %x %c %d %x %x\n", randIndex, RAM[randIndex].VPN, RAM[randIndex].rw, RAM[randIndex].dirty, RAM[randIndex].BASE, RAM[randIndex].BOUND);
-
+                            if(debug == true) 
+                                printf("\nPage replacement for space %d in RAM. Current VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", randIndex, RAM[randIndex].VPN, RAM[randIndex].rw, RAM[randIndex].dirty, RAM[randIndex].BASE, RAM[randIndex].BOUND);
                     }
                 }   
             }
@@ -202,9 +205,9 @@ void rdm(char* filename) {
         //where the population starts
         
         //for R if it is not in RAM -> reads the process from disk (readCount++) 
-          //writes the process into the RAM and marks it as "dirty"
           
         //for W
+          //writes the process into the RAM and marks it as "dirty"
           //if (have space in RAM) -> populate it into the RAM and mark the page as dirty. 
           //else -> page replacement alogrithm. if page under replacement is dirty, numberWrites to disk is ++ 
     }
