@@ -3,11 +3,13 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <limits.h>
+#include <time.h>
 
 int nframes;
 int countReads = 0;
 int countWrites = 0;
 bool debug;
+int nEvents = 0;
 
 void rdm(char* filename);
 void lru(char* filename);
@@ -73,7 +75,7 @@ int main (int argc, char* argv[]) {
 
     //output portion of the code
     printf("Total memory frames: %d\n", nframes);
-    //printf("Events in trace %d\n", nEvents);
+    printf("Events in trace: %d\n", nEvents);
     printf("Total Disk Reads: %d\n", countReads); 
     printf("Total Disk Writes: %d\n", countWrites);
     
@@ -96,7 +98,8 @@ void rdm(char* filename) {
     char READ = 'R';
     char WRITE = 'W';
     char* temp;
-    bool found; 
+    bool found;
+    bool full = false;
     struct PageEntry RAM[nframes];
     int k;
 
@@ -107,6 +110,7 @@ void rdm(char* filename) {
     }
 
     while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
+        nEvents++;
         //printf("%x %c\n", addr, rw);
     
         //direct the flow if the R is seen
@@ -116,7 +120,8 @@ void rdm(char* filename) {
                 //if found need to break and set found to true;
                 unsigned readVPN = addr/4096;
                 if (readVPN == RAM[j].VPN) {
-                    printf("Reading from ram. HIT\n");
+                    //add condition to print only for debug mode                    
+                    printf("Reading %x memory reference from page %x in RAM. HIT\n", addr, readVPN);
                     found = true;
                     break;//this is a hit we dont need to do anything //we can break.
                 } else {
@@ -125,8 +130,22 @@ void rdm(char* filename) {
             }
 
             if (!found) { //in case the page wasn't found in the RAM, we need to load it in MEMORY
-                int l; 
-                for (int l = 0; l < nframes; l++) {
+                int m;
+                int emptypages = 0;
+
+                for (m = 0; m < nframes; m++) { //there is an error in a way I process. Once the array gets filled with last element, it thinks 
+                    if (RAM[m].VPN == 0)        //it needs to eliminate the element again.
+                        emptypages++;
+                }
+                
+                if (emptypages == 0)
+                    full = true;
+                else 
+                    full = false;
+                
+                int l;
+                 
+                for (int l = 0; l < nframes; l++) { //run for loop to check for empty frames.
                     if (RAM[l].VPN == 0)  { //load the first empty page in RAM with information from the disk.
                         RAM[l].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
                         RAM[l].rw = rw; //rw part
@@ -134,10 +153,40 @@ void rdm(char* filename) {
                         RAM[l].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
                         RAM[l].BOUND = RAM[l].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
                         countReads++;
-                        printf("%x %c %d %x %x\n", RAM[l].VPN, RAM[l].rw, RAM[l].dirty, RAM[l].BASE, RAM[l].BOUND);
+                        //add condition to print only for debug mode
+                        printf("Placing the following into an empty space %d in RAM. %x %c %d %x %x\n", l, RAM[l].VPN, RAM[l].rw, RAM[l].dirty, RAM[l].BASE, RAM[l].BOUND);
                         break;
                     }
-                }
+                } 
+               
+                //if (RAM[nframes-1].VPN != 0)  // in case the last frame in the frame table is populated, then the whole table is full
+                //    full = true; 
+            
+                if (full) {
+                    //otherwise if the entire table is full, we need to use a page replacement algorithm here. 
+                    srand(time(0));
+                    int randIndex = (rand() % nframes);
+                    //condition to check which index to be eliminated.
+                    printf("index to be eliminated %d\n", randIndex);
+
+                    if(RAM[randIndex].dirty == 1) {
+                        printf("Eliminating a dirty page %x, requires a write to the disk.\n", RAM[randIndex].VPN);
+                        countWrites++;
+                    }
+
+                    if (RAM[randIndex].dirty == 0) {
+                        //your casual replacement.
+                            RAM[randIndex].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
+                            RAM[randIndex].rw = rw; //rw part
+                            RAM[randIndex].dirty = 0; //initialize dirty bit to zero
+                            RAM[randIndex].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
+                            RAM[randIndex].BOUND = RAM[randIndex].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
+                            countReads++;
+                            //add condition to print only for debug mode
+                            printf("Page replacement for space %d in RAM. %x %c %d %x %x\n", randIndex, RAM[randIndex].VPN, RAM[randIndex].rw, RAM[randIndex].dirty, RAM[randIndex].BASE, RAM[randIndex].BOUND);
+
+                    }
+                }   
             }
         } //end if Read
 
@@ -184,6 +233,7 @@ void lru(char* filename) {
     }
     fclose(fp);
 }
+
 void fifo(char* filename) {
    FILE *fp;
     fp = fopen(filename, "r"); // Open our file.
