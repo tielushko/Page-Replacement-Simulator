@@ -94,7 +94,7 @@ void rdm(char* filename) {
     //int i = 0;
     char READ = 'R';
     char WRITE = 'W';
-    char* temp;
+    //char* temp;
     bool found;
     bool full = false;
     struct PageEntry RAM[nframes];
@@ -348,11 +348,74 @@ void fifo(char* filename) {
         exit(0);
     }
       
-    char* rw; 
+    char rw; 
     unsigned addr;
+    char READ = 'R';
+    char WRITE = 'W';
+    //char* temp;
+    bool found;
+    bool full = false;
+    struct PageEntry RAM[nframes];
+    int k;
+
+    for (k = 0; k < nframes; k++) { //we need to initialize RAM as NULL all the way through 
+        RAM[k].VPN = 0;
+        RAM[k].rw = 0;
+        RAM[k].dirty = 0; //initialize dirty bit to zero
+    }
+
     
     while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
-        printf("%x %c\n", addr, rw);
+        nEvents++;
+    
+        //direct the flow if the R is seen
+        int j;
+        if(rw == 'R') { //works
+            for (j = 0; j < nframes; j++) { //scanning the RAM to find it in memory (if the process is already in memory).
+                //if found need to break and set found to true;
+                unsigned readVPN = addr/4096;
+                if (readVPN == RAM[j].VPN) {
+                    //add condition to print only for debug mode 
+                    if(debug == true) {                   
+                        printf("Reading %x memory reference from page %x in RAM. HIT. Dirty: %d\n", addr, readVPN, RAM[j].dirty);
+                    }
+                    found = true;
+                    break;//this is a hit we dont need to do anything //we can break.
+                } else {
+                    found = false;
+                }
+            }
+
+            if (!found) { //in case the page wasn't found in the RAM, we need to load it in MEMORY
+                int m;
+                int emptypages = 0;
+
+                for (m = 0; m < nframes; m++) { //UPDATE: Processes the empty correctly. 
+                    if (RAM[m].VPN == 0)        
+                        emptypages++;
+                }
+                
+                if (emptypages == 0)
+                    full = true;
+                else 
+                    full = false;
+                
+                int l;
+                 
+                for (l = 0; l < nframes; l++) { //run for loop to check for empty frames.
+                    if (RAM[l].VPN == 0)  { //load the first empty page in RAM with information from the disk.
+                        RAM[l].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
+                        RAM[l].rw = rw; //rw part
+                        RAM[l].dirty = 0; //initialize dirty bit to zero
+                        RAM[l].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
+                        RAM[l].BOUND = RAM[l].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
+                        countReads++;
+                        //add condition to print only for debug mode
+                        if(debug == true)
+                            printf("\nReading from disk and placing the following memory reference: %x into an empty space %d in RAM. VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", addr, l, RAM[l].VPN, RAM[l].rw, RAM[l].dirty, RAM[l].BASE, RAM[l].BOUND);
+                        break;
+                    }
+                } 
     
     }
     fclose(fp);
