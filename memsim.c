@@ -13,6 +13,7 @@ int countWrites = 0;
 bool debug;
 int nEvents = 0;
 
+//Policy Algorithms
 void rdm(char* filename);
 void lru(char* filename);
 void fifo(char* filename); 
@@ -24,17 +25,75 @@ struct PageEntry {
     int dirty; //0 - clean 1 - dirty
     unsigned BASE;
     unsigned BOUND;
-    time_t time_placed; // Time placed is used for LRU. In our LRU Algorithm it pops the "oldest" element in RAM. 
-                        // Oldest is defined as greatest time difference from current time.
 } PageEntry;
 
-// struct IndexMap { //Holds information for LRU. address holds the VPN and index holds the index where it is located in RAM array
-//     unsigned address;
-//     int index;
-//    // time_t time_placed;
+struct frame { // Data structed used to hold individual frames in our single-page page-table
+    unsigned address;
+    int dirty; 
+} frame;
 
-// } IndexMap; //For LRU, if a replacement is required on a full page table: locate the VPN with the minimum index in RAM, remove and rewrite it
-//             //By locating the VPN that has the lowest index, we have identified the VPN that has been used LEAST recently
+struct page_tableQ { // Data structure that contains all the frames in our single-page page-table
+    int size;
+    int index;
+    struct frame *frame_table;
+} page_tableQ;
+
+// Helper functions for queue usage in LRU:
+void LRUmove(struct page_tableQ *queue, int init, char rw) { // This function is responsible for deleting the head of the queue, moves data back toward the head
+                                                    // variable init allows us to pop elements from anywhere in the queue beginning from init
+    // if (debug == true) { // outputs weird stuff, not sure why
+    //     printf("Removing frame from RAMQ for LRU Upkeep: Address %c  Request Type %c\n", queue->frame_table[init].address, rw );
+    // }
+    for (int i = init; i < queue->index - 1; i++) {
+        queue->frame_table[i].address = queue->frame_table[i + 1].address; // Standard data copy synstax
+        queue->frame_table[i].dirty = queue->frame_table[i + 1].dirty;
+    }
+    queue->frame_table[queue->index - 1].dirty = 0; // Scrub last index, it is now stored in the preceding frame
+    queue->frame_table[queue->index - 1].address = 0;
+}
+
+void insert(struct page_tableQ *queue, struct frame *found) { // Store information from node found into the queue, not the same as enqueue
+    queue->frame_table[queue->index].dirty = found->dirty;
+    queue->frame_table[queue->index].address = found->address;
+    queue->index = queue->index + 1; // Incremement index location, we just added an element into the rear of the queue
+}
+
+void dequeue(struct page_tableQ *queue) { // Pops the head of the queue, shifts elements toward head of queue
+    for (int j = 0; j < queue->index; j++) {
+        queue->frame_table[j].address = queue->frame_table[j + 1].address; // Remove element by copying data from the succeeding element
+        queue->frame_table[j].dirty = queue->frame_table[j + 1].dirty; // Standard data copy syntax
+    }
+    // Now we need to clean the data in the last element of our queue which is not empty since we shifted down towards head
+    queue->frame_table[queue->index - 1].address = 0;
+    queue->frame_table[queue->index - 1].dirty = 0;
+    //Update index location
+    if (queue->index == 0) {
+        printf("Empty Queue");
+    }
+    else
+        queue->index = queue->index - 1; // Since we deleted an element, decrement queue index variable. Now holds accurate location of the rear of queue
+}
+
+bool find(struct page_tableQ *queue, struct frame *toFind) {
+    for  (int k = 0; k < queue->index; k++) {
+        if (queue->frame_table[k].address == toFind->address) { // Loop through the frame table, if you find the hexadecimal VPN then it exists already in frame table
+            return true;
+        }
+    }
+    return false;
+} 
+
+int findLoc(struct page_tableQ *queue, struct frame *current) {
+    for (int L = 0; L < queue->index; L++) {
+        if (queue->frame_table[L].address == current->address) { // simple scan and check to find the index of the frame we're looking for
+            return L;
+        }
+    }
+    return -1;
+}
+
+
+ 
 
 int main (int argc, char* argv[]) {
     //making sure that there is a correct number of arguments in the execution of the problem. 
@@ -83,10 +142,10 @@ int main (int argc, char* argv[]) {
     }
 
     //output portion of the code
-    printf("\nTotal memory frames: %d\n", nframes);
-    printf("Events in trace: %d\n", nEvents);
-    printf("Total Disk Reads: %d\n", countReads); 
-    printf("Total Disk Writes: %d\n", countWrites);
+    // printf("\nTotal memory frames: %d\n", nframes);
+    // printf("Events in trace: %d\n", nEvents);
+    // printf("Total Disk Reads: %d\n", countReads); 
+    // printf("Total Disk Writes: %d\n", countWrites);
     
     return 0;
 }
@@ -332,6 +391,12 @@ void rdm(char* filename) {
 }
 
 void lru(char* filename) {
+    // LRU removes the element that was least recently used, which is the oldest element.
+    int lines = 0; // counter for how many lines in the trace file have been processed.
+    char rw; 
+    unsigned addr;
+    char READ = 'R';
+    char WRITE = 'W';
     FILE *fp;
     fp = fopen(filename, "r"); // Open our file.
 
@@ -339,309 +404,94 @@ void lru(char* filename) {
         printf("Error opening file.\n");
         exit(0);
     }
-      
-    char rw; 
-    unsigned addr;
-    //int i = 0;
-    char READ = 'R';
-    char WRITE = 'W';
-    char* temp;
-    bool found;
-    bool full = false;
-    time_t current_time;
-    double diff_t;
-    struct PageEntry RAM[nframes];
-    //struct IndexMap indexes[nframes]; // Used to hold the recent occurred index of each page in a map-like struct
-    int k;
 
-    for (k = 0; k < nframes; k++) { //we need to initialize RAM as NULL all the way through 
-        RAM[k].VPN = 0;
-        RAM[k].rw = 0;
-        RAM[k].dirty = 0; //initialize dirty bit to zero
-    }
-
-    // for (k = 0; k < nframes; k++) { //we need to initialize our indexMap
-    //     indexes[k].address = 0;
-    //     indexes[k].index = 0;
-    //     //indexes[k].time_placed = NULL;
-    // }
-
+    struct page_tableQ *RAMQ;
+    RAMQ = (struct page_tableQ *)malloc(sizeof(struct page_tableQ));
+    RAMQ->frame_table = (struct frame *)malloc(sizeof(struct frame) * nframes);
+    RAMQ->size = nframes;
+    RAMQ->index = 0;
+    
     while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
-        nEvents++;
-    
-        //direct the flow if the R is seen
-        int j;
-        if(rw == 'R') { //works
-            for (j = 0; j < nframes; j++) { //scanning the RAM to find it in memory (if the process is already in memory).
-                //if found need to break and set found to true;
-                unsigned readVPN = addr/4096;
-                if (readVPN == RAM[j].VPN) {
-                    //add condition to print only for debug mode 
-                    if(debug == true) {                   
-                        printf("Reading %x memory reference from page %x in RAM. HIT. Dirty: %d\n", addr, readVPN, RAM[j].dirty);
-                    }
-                    found = true;
-                    break;//this is a hit we dont need to do anything //we can break.
-                } else {
-                    found = false;
-                }
+        // Record data of current trace
+        struct frame *current;
+        current = (struct frame *)malloc(sizeof(struct frame));
+        current->address = addr/4096;
+        current->dirty = 0;
+        lines++; // Increment trace counter
+
+        // if (debug == true) { ***********************************************************************************
+        //     printf("Page request for %x, operation requested: %c\n", current->address, rw);
+        // }
+
+        // SECTION 1: WHEN TRACE IS A 'W' REQUEST
+        if (rw == 'W' || rw == 'w') {
+            current->dirty == 1; // Update flag to account for W request
+            // Need to check if current frame already exists in RAMQ
+            if (find(RAMQ, current) == true) {
+                LRUmove(RAMQ, findLoc(RAMQ, current), rw); // Update queue to maintain LRU policy. Move elements toward front from current
+                RAMQ->index = RAMQ->index - 1;         // if frame table in RAMQ is 1 2 3 4 5 6 (1 is head, 6 is rear, 3 is curr), then LRUmove(RAMQ, findLoc(RAMQ, current)) 
+                insert(RAMQ, current);                 // will perform operations that return RAMQ in the form: 1 2 4 5 6 
+                                                       // the insert(RAMQ, current) will return RAMQ in the form: 1 2 4 5 6 3 now that 3 is MOST recently used
             }
 
-            if (!found) { //in case the page wasn't found in the RAM, we need to load it in MEMORY
-                int m;
-                int emptypages = 0;
-
-                for (m = 0; m < nframes; m++) { //UPDATE: Processes the empty correctly. 
-                    if (RAM[m].VPN == 0)        
-                        emptypages++;
+            else {// Otherwise the frame is not in our frame table and we need to perform LRU to place it
+                if (RAMQ->index == RAMQ->size) {// Case 1: RAMQ is full and we need to place a new frame
+                    if (RAMQ->frame_table[0].dirty == 1) { // Check if the head of the queue is a dirty frame
+                        countWrites++; // Increment write counter to account for the disk operation due to dirty RAMQ frame
+                    }
+                    LRUmove(RAMQ, 0, rw); // Perform LRU on the head (least recent) of the queue
+                    RAMQ->index = RAMQ->index - 1; // Decrememnt our index, we just popped the head of the queue
                 }
-                
-                if (emptypages == 0)
-                    full = true;
-                else 
-                    full = false;
-                
-                int l;
-                 
-                for (l = 0; l < nframes; l++) { //run for loop to check for empty frames.
-                    if (RAM[l].VPN == 0)  { //load the first empty page in RAM with information from the disk.
-                        // Get the time in which x element is placed into RAM
-                        current_time = time(NULL);
-                        if (current_time == ((time_t)-1)) {
-                            printf("Failed to obtain time.");
-                            exit(1);
-                        }
-                        RAM[l].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
-                        RAM[l].rw = rw; //rw part
-                        RAM[l].dirty = 0; //initialize dirty bit to zero
-                        RAM[l].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
-                        RAM[l].BOUND = RAM[l].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
-                        RAM[l].time_placed = current_time;
-                        //update index map with the address and the index it is stored in RAM, as well as the time it was placed
-                        // indexes[l].address = addr/4096;
-                        // indexes[l].index = l; 
-                        // indexes[l].time_placed = current_time;
-                        countReads++;
-                        //add condition to print only for debug mode
-                        if(debug == true)
-                            printf("\nReading from disk and placing the following memory reference: %x into an empty space %d in RAM. VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", addr, l, RAM[l].VPN, RAM[l].rw, RAM[l].dirty, RAM[l].BASE, RAM[l].BOUND);
-                        break;
-                    }
-                } 
-                
-                //otherwise if the entire table is full, we need to use a page replacement algorithm here. 
-                //THIS IS THE JUICE OF ALGORITHM
-                if (full) {
-                    int LRUindex;
-                    //int lru = INT_MAX;
-                    double max_diff = 0;
-                    time_t time_found;
-                    current_time = time(NULL); // Get current time BEFORE entering loop
-                    if (current_time == ((time_t)-1)) {
-                            printf("Failed to obtain time.");
-                            exit(1);
-                    }
-                    for (k = 0; k < nframes; k++) { //Scan over index map to identify the oldest VPN
-                        diff_t = difftime(current_time, RAM[k].time_placed); // Evaluate the time passed from current time, trying to find element with greatest time difference (oldest)
-                        if (diff_t > max_diff) {
-                            max_diff = diff_t;
-                            LRUindex = k;
-                        }
-                    }
-                    //LRUindex = lru;
-                    // //condition to check which index to be eliminated.
-                    if(debug == true) {
-                        printf("\nIndex to be eliminated %d\n", LRUindex);
-                        printf("Page to be eliminated: VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", RAM[LRUindex].VPN, RAM[LRUindex].rw, RAM[LRUindex].dirty, RAM[LRUindex].BASE, RAM[LRUindex].BOUND);
-                    }
-                    
-                    if (RAM[LRUindex].dirty == 0) {
-                        //your casual replacement.
-                            time_found = time(NULL); //update the time of the new element with current time
-                            if (time_found == ((time_t)-1)) {
-                                printf("Failed to obtain time.");
-                                exit(1);
-                            }
-                            RAM[LRUindex].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
-                            RAM[LRUindex].rw = rw; //rw part
-                            RAM[LRUindex].dirty = 0; //initialize dirty bit to zero
-                            RAM[LRUindex].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
-                            RAM[LRUindex].BOUND = RAM[LRUindex].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
-                            RAM[LRUindex].time_placed = time_found;
-                            // indexes[LRUindex].index = LRUindex; // Update index map at our replacement index
-                            // indexes[LRUindex].address = addr/4096;
-                            // indexes[LRUindex].time_placed = time_found;
-                            countReads++;
-                            //add condition to print only for debug mode
-                            if(debug == true) 
-                                printf("\nPage replacement for space %d in RAM. Current VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", LRUindex, RAM[LRUindex].VPN, RAM[LRUindex].rw, RAM[LRUindex].dirty, RAM[LRUindex].BASE, RAM[LRUindex].BOUND);
-                    }
-                    if(RAM[LRUindex].dirty == 1) {
-                        if(debug == true)
-                            printf("\nEliminating a dirty page %x, requires a write to the disk.\n", RAM[LRUindex].VPN);
-                        countWrites++;
-                        //think if this should get replaced...
-                        time_found = time(NULL); //update the time of the new element with current time
-                        if (time_found == ((time_t)-1)) {
-                            printf("Failed to obtain time.");
-                            exit(1);
-                        }
-                        RAM[LRUindex].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
-                        RAM[LRUindex].rw = rw; //rw part
-                        RAM[LRUindex].dirty = 0; //initialize dirty bit to zero
-                        RAM[LRUindex].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
-                        RAM[LRUindex].BOUND = RAM[LRUindex].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
-                        RAM[LRUindex].time_placed = time_found;
-                        // indexes[LRUindex].index = LRUindex; // Update index map at our replacement index
-                        // indexes[LRUindex].address = addr/4096;
-                        // indexes[LRUindex].time_placed = time_found;
-                        countReads++;
-                        //add condition to print only for debug mode
-                        if(debug == true) 
-                            printf("\nPage replacement for space %d in RAM. Current VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", LRUindex, RAM[LRUindex].VPN, RAM[LRUindex].rw, RAM[LRUindex].dirty, RAM[LRUindex].BASE, RAM[LRUindex].BOUND);
-                        
-                    }
+                countReads++; // Increment reads, have to go to disk to find this frame
+                current->dirty = 1; // Since request is a W, change dirty bit to 1 
+                insert(RAMQ, current); // Standard insert, if RAMQ is full the LRUmove has already occured in case 1, otherwise RAMQ not full and we can insert regularly.
 
-                }   
-            }
-        } //end if Read
-
-        if (rw == 'W') {
-            //check if the page already exists in the ram, then it will just be written on top of it. 
-            for (j = 0; j < nframes; j++) { //scanning the RAM to find it in memory (if the process is already in memory).
-                //if found need to break and set found to true;
-                unsigned writeVPN = addr/4096;
-                if (writeVPN == RAM[j].VPN) {
-                    //add condition to print only for debug mode 
-                    if(debug == true) {                   
-                        printf("Rewriting the page: %x memory reference onto the page %x in RAM.\n", addr, writeVPN);
-                        RAM[j].dirty = 1;
-                    }
-                    found = true;
-                    break;//this is a hit we dont need to do anything //we can break.
-                } else {
-                    found = false;
-                }
             }
 
-            //if the page is not located in the ram, we need to find an empty space for it to fit into the ram
-            if (!found) {
-                int m;
-                int emptypages = 0;
+            // if (debug = true) { *********************************************************************************************************
+            //     printf("RAMQ has been appended with trace: Address %x       Request Type: %c\n", current->address, rw);
+            // }
 
-                for (m = 0; m < nframes; m++) { //UPDATE: Processes the empty correctly. 
-                    if (RAM[m].VPN == 0)        
-                        emptypages++;
-                }
-                    
-                if (emptypages == 0)
-                    full = true;
-                else 
-                    full = false;
-
-                if (!full) {
-                    int l;
-                    for (l = 0; l < nframes; l++) { //run for loop to check for empty frames.
-                        if (RAM[l].VPN == 0)  { //load the first empty page in RAM with information from the disk.
-                            // Get the time in which x element is placed into RAM
-                            current_time = time(NULL);
-                            if (current_time == ((time_t)-1)) {
-                                printf("Failed to obtain time.");
-                                exit(1);
-                            }
-                            RAM[l].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
-                            RAM[l].rw = rw; //rw part
-                            RAM[l].dirty = 0; //initialize dirty bit to zero
-                            RAM[l].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
-                            RAM[l].BOUND = RAM[l].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
-                            RAM[l].time_placed = current_time;
-                            //update index map with the address and the index it is stored in RAM, as well as the time it was placed
-                            // indexes[l].address = addr/4096;
-                            // indexes[l].index = l; 
-                            // indexes[l].time_placed = current_time;
-                            countReads++;
-                            //add condition to print only for debug mode
-                            if(debug == true)
-                                printf("\nReading from disk and placing the following memory reference: %x into an empty space %d in RAM. VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", addr, l, RAM[l].VPN, RAM[l].rw, RAM[l].dirty, RAM[l].BASE, RAM[l].BOUND);
-                            break;
-                        }
-                    }
-                } else { //ALGORITHM JUICE
-                    int LRUindex;
-                    //int lru = INT_MAX;
-                    double max_diff = 0;
-                    time_t time_found;
-                    current_time = time(NULL); // Get current time BEFORE entering loop
-                    if (current_time == ((time_t)-1)) {
-                            printf("Failed to obtain time.");
-                            exit(1);
-                    }
-                    for (k = 0; k < nframes; k++) { //Scan over index map to identify the oldest VPN
-                        diff_t = difftime(current_time, RAM[k].time_placed); // Evaluate the time passed from current time, trying to find element with greatest time difference (oldest)
-                        if (diff_t > max_diff) {
-                            max_diff = diff_t;
-                            LRUindex = k;
-                        }
-                    }
-                    //LRUindex = lru;
-                    //condition to check which index to be eliminated.
-                    if(debug == true) {
-                        printf("\nIndex to be eliminated %d\n", LRUindex);
-                        printf("Page to be eliminated: VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", RAM[LRUindex].VPN, RAM[LRUindex].rw, RAM[LRUindex].dirty, RAM[LRUindex].BASE, RAM[LRUindex].BOUND);
-                    }
-                    
-                    if (RAM[LRUindex].dirty == 0) {
-                        if(debug == true)
-                            printf("\nEliminating a clean page %x, no write to the disk required.\n", RAM[LRUindex].VPN);
-                        //rewriting the page
-                        time_found = time(NULL); //update the time of the new element with current time
-                        if (time_found == ((time_t)-1)) {
-                            printf("Failed to obtain time.");
-                            exit(1);
-                        }
-                        RAM[LRUindex].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
-                        RAM[LRUindex].rw = rw; //rw part
-                        RAM[LRUindex].dirty = 1; //initialize dirty bit to one as the command was W
-                        RAM[LRUindex].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
-                        RAM[LRUindex].BOUND = RAM[LRUindex].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
-                        RAM[LRUindex].time_placed = time_found;
-                        // indexes[LRUindex].address = addr/4096; // update index map
-                        // indexes[LRUindex].index = LRUindex;
-                        // indexes[LRUindex].time_placed = time_found;
-                        //add condition to print only for debug mode
-                        if(debug == true) 
-                            printf("\nPage replacement for space %d in RAM. Current VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", LRUindex, RAM[LRUindex].VPN, RAM[LRUindex].rw, RAM[LRUindex].dirty, RAM[LRUindex].BASE, RAM[LRUindex].BOUND);
-                    }
-
-                    if(RAM[LRUindex].dirty == 1) {
-                        if(debug == true)
-                            printf("\nEliminating a dirty page %x, requires a write to the disk.\n", RAM[LRUindex].VPN);
-                        countWrites++;
-                        //rewriting the page.
-                        time_found = time(NULL); //update the time of the new element with current time
-                        if (time_found == ((time_t)-1)) {
-                            printf("Failed to obtain time.");
-                            exit(1);
-                        }
-                        RAM[LRUindex].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
-                        RAM[LRUindex].rw = rw; //rw part
-                        RAM[LRUindex].dirty = 1; //initialize dirty bit to one as the command was W
-                        RAM[LRUindex].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
-                        RAM[LRUindex].BOUND = RAM[LRUindex].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
-                        RAM[LRUindex].time_placed = time_found;
-                        // indexes[LRUindex].address = addr/4096; // update index map
-                        // indexes[LRUindex].index = LRUindex;
-                        // indexes[LRUindex].time_placed = time_found;
-                        //add condition to print only for debug mode
-                        if(debug == true) 
-                            printf("\nPage replacement for space %d in RAM. Current VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", LRUindex, RAM[LRUindex].VPN, RAM[LRUindex].rw, RAM[LRUindex].dirty, RAM[LRUindex].BASE, RAM[LRUindex].BOUND);
-                    }                     
-                }
+        }
+        // SECTION 2: TRACE IS A 'R' REQUEST
+        else {
+            // Need to check if current frame already exists in RAMQ
+            if (find(RAMQ, current) == true) {
+                LRUmove(RAMQ, findLoc(RAMQ, current), rw); // Update queue to maintain LRU policy. Move elements toward front from current
+                RAMQ->index = RAMQ->index - 1;         // if frame table in RAMQ is 1 2 3 4 5 6 (1 is head, 6 is rear, 3 is curr), then LRUmove(RAMQ, findLoc(RAMQ, current)) 
+                insert(RAMQ, current);                 // will perform operations that return RAMQ in the form: 1 2 4 5 6 
+                                                       // the insert(RAMQ, current) will return RAMQ in the form: 1 2 4 5 6 3 now that 3 is MOST recently used
             }
-            
-        } 
-    }
-    
+
+            else { // Otherwise the frame is not in our frame table and we need to perform LRU to place it
+                if (RAMQ->index == RAMQ->size) {// Case 1: RAMQ is full and we need to place a new frame
+                    if (RAMQ->frame_table[0].dirty == 1) { // Check if the head of the queue is a dirty frame
+                        countWrites++; // Increment write counter to account for the disk operation due to dirty RAMQ frame
+                    }
+                    LRUmove(RAMQ, 0, rw); // Perform LRU on the head (least recent) of the queue
+                    RAMQ->index = RAMQ->index - 1; // Decrememnt our index, we just popped the head of the queue
+                }
+                countReads++; // Increment reads, have to go to disk to find this frame
+                //Don't need to update curr->dirty here, request was not a 'W'
+                insert(RAMQ, current); // Standard insert, if RAMQ is full the LRUmove has already occured in case 1, otherwise RAMQ not full and we can insert regularly.
+
+            }
+
+            // if (debug = true) { ******************************************************************************************
+            //     printf("RAMQ has been appended with trace: Address %x       Request Type: %c\n", current->address, rw);
+            // }
+
+        }
+        // if (debug == true) { // print our frame table for debug display ****************************************************************************
+        //     printf("PRINTING TABLE FOR DISPLAY\n");
+        //     for (int p = 0; p < nframes; p++){
+        //         printf("Index in Queue: %d    VPN: %x   Dirty: %d\n", p, RAMQ->frame_table[p].address, RAMQ->frame_table[p].dirty);
+        //     }
+        // }
+    } // end of while loop
+    printf("Traces processed: %d    Disk Reads: %d      Disk Writes: %d\n", lines, countReads, countWrites);
+    free(RAMQ->frame_table);
+    free(RAMQ);
     fclose(fp);
 }
 
