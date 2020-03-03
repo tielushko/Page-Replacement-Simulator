@@ -494,7 +494,7 @@ void lru(char* filename) {
             }
         }
     } // end of while loop
-    printf("Total memory frames: %d\nEvents in trace: %d\nTotal Disk Writes: %d\nTotal Disk Reads: %d\n", nframes, lines, countWrites, countReads);
+    printf("Total memory frames: %d\nEvents in trace: %d\nTotal Disk Reads: %d\nTotal Disk Writess: %d\n", nframes, lines, countReads, countWrites);
     free(RAMQ->frame_table);
     free(RAMQ);
     fclose(fp);
