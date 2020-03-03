@@ -161,10 +161,8 @@ void rdm(char* filename) {
       
     char rw; 
     unsigned addr;
-    //int i = 0;
     char READ = 'R';
     char WRITE = 'W';
-    char* temp;
     bool found;
     bool full = false;
     struct PageEntry RAM[nframes];
@@ -190,7 +188,9 @@ void rdm(char* filename) {
                     if(debug == true) {                   
                         printf("Reading %x memory reference from page %x in RAM. HIT. Dirty: %d\n", addr, readVPN, RAM[j].dirty);
                     }
+                    RAM[j].dirty = 0;
                     found = true;
+                    //update the last operation as read -> dirty bit 0;
                     break;//this is a hit we dont need to do anything //we can break.
                 } else {
                     found = false;
@@ -241,6 +241,8 @@ void rdm(char* filename) {
                     
                     if (RAM[randIndex].dirty == 0) {
                         //your casual replacement.
+                        if(debug == true)
+                                printf("\nEliminating a clean page %x, no write to the disk required.\n", RAM[randIndex].VPN);
                             RAM[randIndex].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
                             RAM[randIndex].rw = rw; //rw part
                             RAM[randIndex].dirty = 0; //initialize dirty bit to zero
@@ -250,8 +252,8 @@ void rdm(char* filename) {
                             //add condition to print only for debug mode
                             if(debug == true) 
                                 printf("\nPage replacement for space %d in RAM. Current VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", randIndex, RAM[randIndex].VPN, RAM[randIndex].rw, RAM[randIndex].dirty, RAM[randIndex].BASE, RAM[randIndex].BOUND);
-                    }
-                    if(RAM[randIndex].dirty == 1) {
+                    } else {
+                    //if(RAM[randIndex].dirty == 1) {
                         if(debug == true)
                             printf("\nEliminating a dirty page %x, requires a write to the disk.\n", RAM[randIndex].VPN);
                         countWrites++;
@@ -280,9 +282,9 @@ void rdm(char* filename) {
                 if (writeVPN == RAM[j].VPN) {
                     //add condition to print only for debug mode 
                     if(debug == true) {                   
-                        printf("Rewriting the page: %x memory reference onto the page %x in RAM.\n", addr, writeVPN);
-                        RAM[j].dirty = 1;
+                        printf("Rewriting the page: %x memory reference onto the page %x in RAM.\n", addr, writeVPN);            
                     }
+                    RAM[j].dirty = 1;
                     found = true;
                     break;//this is a hit we dont need to do anything //we can break.
                 } else {
@@ -342,9 +344,8 @@ void rdm(char* filename) {
                         //add condition to print only for debug mode
                         if(debug == true) 
                             printf("\nPage replacement for space %d in RAM. Current VPN: %x RW: %c Dirty: %d Base: %x Bound: %x\n", randIndex, RAM[randIndex].VPN, RAM[randIndex].rw, RAM[randIndex].dirty, RAM[randIndex].BASE, RAM[randIndex].BOUND);
-                    }
-
-                    if(RAM[randIndex].dirty == 1) {
+                    } else {
+                    //if(RAM[randIndex].dirty == 1) {
                         if(debug == true)
                             printf("\nEliminating a dirty page %x, requires a write to the disk.\n", RAM[randIndex].VPN);
                         countWrites++;
@@ -367,15 +368,7 @@ void rdm(char* filename) {
             
             
         } //end if write
-        /*
-        RAM[i].VPN = addr/4096; //we need to divide by 4096 to eliminate the page offset. (in hex 4096 is equal to 0x1000))
-        RAM[i].rw = rw; //rw part
-        RAM[i].dirty = 0; //initialize dirty bit to zero
-        RAM[i].BASE = addr/4096 * 0x1000; //getting the BASE of the single page. Many of the accesses will be within the same page
-        RAM[i].BOUND = RAM[i].BASE + 0xfff; //getting the BOUND of the page. if you add +1, this will technically be the different page.
-        */
-        //printf("%x %c %d %x %x\n", RAM[i].VPN, RAM[i].rw, RAM[i].dirty, RAM[i].BASE, RAM[i].BOUND); //the test to make sure it works correctly proven itself.
-        //i++;
+        
         //where the population starts
         
         //for R if it is not in RAM -> reads the process from disk (readCount++) 
@@ -731,14 +724,6 @@ void fifo(char* filename) {
                 //if page under eviction is dirty, we need to save it to the disk -> diskWrites++
                 //if page under eviction is !dirty, we just replace it. no need to increment anything. 
             
-        }
-    }
-
-    if (debug == true) {
-        //The final Ram 
-        printf("The final RAM contents are the following: \n");
-        for (int z = 0; z < nframes; z++) {
-            printf("Slot: %d, VPN: %x, Dirty: %d\n", z, RAM[z].VPN, RAM[z].dirty);
         }
     }
     fclose(fp);
