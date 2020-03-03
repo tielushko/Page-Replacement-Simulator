@@ -142,10 +142,10 @@ int main (int argc, char* argv[]) {
     }
 
     //output portion of the code
-    // printf("\nTotal memory frames: %d\n", nframes);
-    // printf("Events in trace: %d\n", nEvents);
-    // printf("Total Disk Reads: %d\n", countReads); 
-    // printf("Total Disk Writes: %d\n", countWrites);
+    printf("\nTotal memory frames: %d\n", nframes);
+    printf("Events in trace: %d\n", nEvents);
+    printf("Total Disk Reads: %d\n", countReads); 
+    printf("Total Disk Writes: %d\n", countWrites);
     
     return 0;
 }
@@ -392,7 +392,6 @@ void rdm(char* filename) {
 
 void lru(char* filename) {
     // LRU removes the element that was least recently used, which is the oldest element.
-    int lines = 0; // counter for how many lines in the trace file have been processed.
     char rw; 
     unsigned addr;
     char READ = 'R';
@@ -422,7 +421,7 @@ void lru(char* filename) {
         current = (struct frame *)malloc(sizeof(struct frame));
         current->address = addr/4096;
         current->dirty = 0; //initialize
-        lines++; // Increment trace counter
+        nEvents++; // Increment trace counter
 
         if (debug == true) {
             printf("Page request for %x, operation requested: %c\n", current->address, rw);
@@ -494,7 +493,7 @@ void lru(char* filename) {
             }
         }
     } // end of while loop
-    printf("Total memory frames: %d\nEvents in trace: %d\nTotal Disk Reads: %d\nTotal Disk Writess: %d\n", nframes, lines, countReads, countWrites);
+    
     free(RAMQ->frame_table);
     free(RAMQ);
     fclose(fp);
