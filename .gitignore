@@ -1,6 +1,8 @@
 #pdfs
 *.pdf
 
+#test trace file
+test.trace
 # Prerequisites
 *.d
 
