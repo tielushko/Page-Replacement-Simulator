@@ -740,10 +740,299 @@ void vms(char* filename) {
       
     char* rw; 
     unsigned addr;
+    char READ = 'R';
+    char WRITE = 'W';
+    bool found;
+    bool full = false;
+    struct PageEntry RAM[nframes];
+    int k;
+    int RSS = nframes/2;
+    struct PageEntry FIFOA[RSS]; //for processes !=3 stores page numbers 
+    struct PageEntry FIFOB[RSS]; //for processes ==3 stores page numbers. 
+
+    int fifoAinsertIndex = 0;
+    int fifoBinsertIndex = 0;
+
+    struct PageEntry Clean[RSS + 1];
+    struct PageEntry Dirty[RSS + 1];
     
-    while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
-        printf("%x %c\n", addr, rw);
-    
+    //int cleanInsert = 0;
+    //int dirtyInsert = 0;
+
+    bool doNothing = false; 
+
+    for (k = 0; k < nframes; k++) { //we need to initialize RAM as NULL all the way through 
+        RAM[k].VPN = 0;
+        RAM[k].rw = 0;
+        RAM[k].dirty = 0; //initialize dirty bit to zero
     }
+
+    for (k = 0; k < RSS; k++) { //we need to initialize RAM as NULL all the way through 
+        FIFOA[k].VPN = 0;
+        FIFOA[k].rw = 0;
+        FIFOA[k].dirty = 0; //initialize dirty bit to zero
+        FIFOB[k].VPN = 0;
+        FIFOB[k].rw = 0;
+        FIFOB[k].dirty = 0; //initialize dirty bit to zero
+    }
+    for (k = 0; k < RSS+1; k++) { 
+        Clean[k].VPN = 0;
+        Clean[k].rw = 0;
+        Clean[k].dirty = 0; //initialize dirty bit to zero
+        Dirty[k].VPN = 0;
+        Dirty[k].rw = 0;
+        Dirty[k].dirty = 0; //initialize dirty bit to zero
+    }
+
+    while (fscanf(fp, "%x %c", &addr, &rw) != EOF) {
+        nEvents++;
+
+        struct PageEntry newPage;
+        unsigned readVPN = addr/4096; //new page number.
+        newPage.VPN = readVPN; 
+        
+        if (rw == 'R') {
+            newPage.dirty = 0;
+            newPage.rw = 'R';
+        } else { 
+            newPage.dirty = 1;
+            newPage.rw = 'W';
+        }
+
+        unsigned process;
+        if ((process = readVPN/0x10000)!=3)
+            process = 0; // the division to determine the number of the process. 
+        else 
+            process = 3;
+
+        //printf("ProcessInt: %x\n", process);
+
+        int i;
+        if (process = 0) { //if new_page in FIFO (Current process)  -> do nothing.
+            for (i = 0; i < RSS; i++) {
+                if (readVPN == FIFOA[i].VPN)  {//if new page is in fifo -> do nothing.
+                    doNothing = true;
+                    if (debug == true) {
+                        printf("The frame is already in the memory, hit");
+                    }
+                }
+            }
+
+            if (doNothing == false) {
+                
+                struct PageEntry pageOut = FIFOA[fifoAinsertIndex]; //get the page out from the fifo of a curret process.
+                FIFOA[fifoAinsertIndex] = newPage; //insert new page into a fifo process.
+
+                if (fifoAinsertIndex == RSS-1)
+                    fifoAinsertIndex = 0;
+                else 
+                    fifoAinsertIndex++;
+
+                if (pageOut.VPN != 0) { //if fifo queue is filled up, we need to push it into the clean/dirty list.
+                    int j;
+                    if(pageOut.dirty == 0) {
+                        for (j = 0; j < RSS + 1; j++) {
+                            if (Clean[j].VPN == 0) {//insert into the clean list first available. 
+                                Clean[j] = pageOut;
+                                break; //after the first spot was found, break.
+                            }
+                        }
+                    } else {
+                        for (j = 0; j < RSS + 1; j++) {
+                            if (Dirty[j].VPN == 0) {//insert into the clean list first available. 
+                                Dirty[j] = pageOut;
+                                break; //after the first spot was found, break.
+                            }
+                        }
+                    }
+                } 
+
+                //if new page already in memory, it must in Clean or Dirty, since it's in memory, but not in FIFO as requested earlier. 
+                int k = 0;
+                for (k = 0; k < nframes; k++) {
+                    if (newPage.VPN == RAM[k].VPN) {//if its already in memory;
+                        found = true;
+                        break;
+                    } else {
+                        found = false;
+                    }
+                }
+                
+                if (found) { //remove new page from clean or dirty, wherever it may be. 
+                    int l;
+                    for (l = 0; l < RSS + 1; l++) {
+                        if (newPage.VPN == Clean[l].VPN) {
+                            Clean[l].VPN = 0; 
+                            Clean[l].rw = 0;
+                            Clean[l].dirty = 0;//erase (reset to 0)
+                        }
+                        if (newPage.VPN == Dirty[l].VPN) {
+                            Dirty[l].VPN = 0; 
+                            Dirty[l].rw = 0;
+                            Dirty[l].dirty = 0;//erase (reset to 0)
+                        }
+                    }
+                } else {
+                    int m; 
+                    for (m = 0; m < nframes; m++) { //if there is room in memory, place it into a new frame, break.
+                        if (RAM[m].VPN == 0) {
+                            RAM[m] = newPage;
+                            break;
+                        } else {
+                            full = true;
+                        }
+                    }
+
+                    if(full) {
+                        struct PageEntry toEmpty;
+                        toEmpty.VPN = -1;
+                        int n;
+                        for (n = 0; n < nframes; n++) { //pull out the first one from clean if any
+                            if (Clean[n].VPN != 0) {
+                                toEmpty = Clean[n];
+                                Clean[n].VPN = 0;
+                                Clean[n].rw = 0;
+                                Clean[n].dirty = 0;
+                                break;
+                            }
+                        }
+                        if (toEmpty.VPN == -1) { //else, pull out from dirty
+                            for (n = 0; n < nframes; n++) {
+                                if (Dirty[n].VPN != 0) {
+                                    toEmpty = Dirty[n];
+                                    Dirty[n].VPN = 0;
+                                    Dirty[n].rw = 0;
+                                    Dirty[n].dirty = 0;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        //place the new page into the frame to empty.
+                        //traverse ram and find the same VPN as frame to empty and replace it with the contents of new page. 
+                        int o;
+                        for (o = 0; o < nframes; o++) {
+                            if (RAM[o].VPN == toEmpty.VPN) { //match is found to replace
+                                RAM[o] = toEmpty; //place (new_page, frame_to_empty)
+                            }
+                        }
+                    }
+                    }
+            }
+    } else {
+            for (i = 0; i < RSS; i++) {
+                if (readVPN == FIFOB[i].VPN) //if new page is in fifo -> do nothing.
+                    doNothing = true;
+            }
+
+            if (doNothing == false) {
+                
+                struct PageEntry pageOut = FIFOB[fifoBinsertIndex]; //get the page out from the fifo of a curret process.
+                FIFOB[fifoBinsertIndex] = newPage; //insert new page into a fifo process.
+
+                if (fifoBinsertIndex == RSS-1)
+                    fifoBinsertIndex = 0;
+                else 
+                    fifoBinsertIndex++;
+
+                if (pageOut.VPN != 0) { //if fifo queue is filled up, we need to push it into the clean/dirty list.
+                    int j;
+                    if(pageOut.dirty == 0) {
+                        for (j = 0; j < RSS + 1; j++) {
+                            if (Clean[j].VPN == 0) {//insert into the clean list first available. 
+                                Clean[j] = pageOut;
+                                break; //after the first spot was found, break.
+                            }
+                        }
+                    } else {
+                        for (j = 0; j < RSS + 1; j++) {
+                            if (Dirty[j].VPN == 0) {//insert into the clean list first available. 
+                                Dirty[j] = pageOut;
+                                break; //after the first spot was found, break.
+                            }
+                        }
+                    }
+                } 
+
+                //if new page already in memory, it must in Clean or Dirty, since it's in memory, but not in FIFO as requested earlier. 
+                int k = 0;
+                for (k = 0; k < nframes; k++) {
+                    if (newPage.VPN == RAM[k].VPN) {//if its already in memory;
+                        found = true;
+                        break;
+                    } else {
+                        found = false;
+                    }
+                }
+                
+                if (found) { //remove new page from clean or dirty, wherever it may be. 
+                    int l;
+                    for (l = 0; l < RSS + 1; l++) {
+                        if (newPage.VPN == Clean[l].VPN) {
+                            Clean[l].VPN = 0; 
+                            Clean[l].rw = 0;
+                            Clean[l].dirty = 0;//erase (reset to 0)
+                        }
+                        if (newPage.VPN == Dirty[l].VPN) {
+                            Dirty[l].VPN = 0; 
+                            Dirty[l].rw = 0;
+                            Dirty[l].dirty = 0;//erase (reset to 0)
+                        }
+                    }
+                } else {
+                    int m; 
+                    for (m = 0; m < nframes; m++) { //if there is room in memory, place it into a new frame, break.
+                        if (RAM[m].VPN == 0) {
+                            RAM[m] = newPage;
+                            break;
+                        } else {
+                            full = true;
+                        }
+                    }
+
+                    if(full) {
+                        struct PageEntry toEmpty;
+                        toEmpty.VPN = -1;
+                        int n;
+                        for (n = 0; n < nframes; n++) { //pull out the first one from clean if any
+                            if (Clean[n].VPN != 0) {
+                                toEmpty = Clean[n];
+                                Clean[n].VPN = 0;
+                                Clean[n].rw = 0;
+                                Clean[n].dirty = 0;
+                                break;
+                            }
+                        }
+                        if (toEmpty.VPN == -1) { //else, pull out from dirty
+                            for (n = 0; n < nframes; n++) {
+                                if (Dirty[n].VPN != 0) {
+                                    toEmpty = Dirty[n];
+                                    Dirty[n].VPN = 0;
+                                    Dirty[n].rw = 0;
+                                    Dirty[n].dirty = 0;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        //place the new page into the frame to empty.
+                        //traverse ram and find the same VPN as frame to empty and replace it with the contents of new page. 
+                        int o;
+                        for (o = 0; o < nframes; o++) {
+                            if (RAM[o].VPN == toEmpty.VPN) { //match is found to replace
+                                RAM[o] = toEmpty; //place (new_page, frame_to_empty)
+                            }
+                        }
+                    }
+                    }
+            }
+            //in case process number is 3
+        }
+    }
+    int z;
+    printf("The final RAM contents are the following: \n");
+        for (z = 0; z < nframes; z++) {
+            printf("Slot: %d, VPN: %x, Dirty: %d\n", z, RAM[z].VPN, RAM[z].dirty);
+        }
     fclose(fp);
 }
