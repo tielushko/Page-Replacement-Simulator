@@ -4,8 +4,6 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <time.h>
-// #include <float.h> //for DBL_MAX
-// #define INT_MAX 2147483647
 
 int nframes;
 int countReads = 0;
@@ -95,6 +93,14 @@ int findLoc(struct page_tableQ *queue, struct frame *current) {
 
  
 
+struct PageEntry {
+    unsigned VPN;
+    char rw;
+    int dirty; //0 - clean 1 - dirty
+    unsigned BASE;
+    unsigned BOUND;
+} PageEntry;
+
 int main (int argc, char* argv[]) {
     //making sure that there is a correct number of arguments in the execution of the problem. 
     if (argc < 5) {
@@ -163,6 +169,7 @@ void rdm(char* filename) {
     unsigned addr;
     char READ = 'R';
     char WRITE = 'W';
+    
     bool found;
     bool full = false;
     struct PageEntry RAM[nframes];
@@ -189,7 +196,7 @@ void rdm(char* filename) {
                         printf("Reading %x memory reference from page %x in RAM. HIT. Dirty: %d\n", addr, readVPN, RAM[j].dirty);
                     }
                     RAM[j].dirty = 0;
-                    found = true;
+                    found = true;                
                     //update the last operation as read -> dirty bit 0;
                     break;//this is a hit we dont need to do anything //we can break.
                 } else {
@@ -368,9 +375,8 @@ void rdm(char* filename) {
             
             
         } //end if write
-        
+      
         //where the population starts
-        
         //for R if it is not in RAM -> reads the process from disk (readCount++) 
           
         //for W
@@ -379,7 +385,6 @@ void rdm(char* filename) {
             //writes the process into the RAM and marks it as "dirty"
           //else -> page replacement alogrithm. if page under replacement is dirty, numberWrites to disk is ++ as we need to save that page to disk.
     }
-    
     fclose(fp);
 }
 
@@ -389,6 +394,7 @@ void lru(char* filename) {
     unsigned addr;
     char READ = 'R';
     char WRITE = 'W';
+
     FILE *fp;
     fp = fopen(filename, "r"); // Open our file.
 
@@ -396,7 +402,6 @@ void lru(char* filename) {
         printf("Error opening file.\n");
         exit(0);
     }
-
     struct page_tableQ *RAMQ;
     RAMQ = (struct page_tableQ *)malloc(sizeof(struct page_tableQ));
     RAMQ->frame_table = (struct frame *)malloc(sizeof(struct frame) * nframes);
@@ -636,7 +641,6 @@ void fifo(char* filename) {
                         printf("Rewriting the page: %x memory reference onto the page %x in RAM.\n", addr, writeVPN);
                     }   
                     found = true;
-                    //add the fifoIndex??? maybe...
                     break;//this is a hit we dont need to do anything //we can break.
                 } else {
                     found = false;
@@ -1036,3 +1040,4 @@ void vms(char* filename) {
         }
     fclose(fp);
 }
+
